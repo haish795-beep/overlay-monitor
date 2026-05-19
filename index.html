@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>overlay-monitor</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Rajdhani:wght@300;400;500;600&display=swap');
+  :root {
+    --bg:        #0a0a0f;
+    --bg2:       #0f0f18;
+    --bg3:       #13131f;
+    --border:    rgba(255,255,255,0.06);
+    --accent:    #00e5ff;
+    --accent2:   #7c3aed;
+    --warn:      #f59e0b;
+    --danger:    #ef4444;
+    --ok:        #10b981;
+    --text:      #e2e8f0;
+    --muted:     #4a5568;
+    --mono:      'JetBrains Mono', monospace;
+    --sans:      'Rajdhani', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: transparent;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: rgba(10, 10, 15, 0.92);
+    backdrop-filter: blur(20px);
+    border-left: 1px solid var(--border);
+  }
+  #titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: rgba(15,15,24,0.95);
+    border-bottom: 1px solid var(--border);
+    -webkit-app-region: drag;
+    flex-shrink: 0;
+  }
+
+  #titlebar .logo {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+
+  #titlebar .logo span { color: var(--muted); font-weight: 300; }
+
+  #titlebar .controls {
+    display: flex;
+    gap: 6px;
+    -webkit-app-region: no-drag;
+  }
+
+  .ctrl-btn {
+    width: 26px; height: 26px;
+    border: 1px solid var(--border);
+    background: var(--bg3);
+    color: var(--muted);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .15s;
+  }
+  .ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .ctrl-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(0,229,255,0.08); }
+  .ctrl-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+
+  #tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    -webkit-app-region: no-drag;
+  }
+
+  .tab {
+    flex: 1;
+    padding: 8px 4px;
+    text-align: center;
+    font-family: var(--sans);
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all .15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  #content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px;
+  }
+
+  #content::-webkit-scrollbar { width: 3px; }
+  #content::-webkit-scrollbar-track { background: transparent; }
+  #content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+
+  .card-title {
+    font-family: var(--sans);
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .card-title .val {
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0;
+  }
+
+  .gauge-wrap {
+    margin-bottom: 6px;
+  }
+
+  .gauge-label {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 3px;
+    color: var(--muted);
+    font-size: 10px;
+  }
+
+  .gauge-label .pct { color: var(--text); }
+
+  .gauge-track {
+    height: 4px;
+    background: var(--bg3);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .gauge-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width .4s ease;
+  }
+
+  canvas.sparkline {
+    width: 100%;
+    height: 48px;
+    margin-top: 6px;
+    display: block;
+  }
+
+  .core-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  .core-cell {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px;
+    text-align: center;
+  }
+
+  .core-cell .core-n { font-size: 9px; color: var(--muted); }
+  .core-cell .core-v { font-size: 11px; font-weight: 700; }
+
+  .net-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+  }
+  .net-row:last-child { border-bottom: none; }
+  .net-row .label { color: var(--muted); }
+  .net-row .up { color: var(--ok); }
+  .net-row .down { color: var(--accent); }
+
+  #proc-search {
+    width: 100%;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 7px 10px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    margin-bottom: 8px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  #proc-search:focus { border-color: var(--accent); }
+  #proc-search::placeholder { color: var(--muted); }
+
+  .proc-header {
+    display: grid;
+    grid-template-columns: 50px 1fr 52px 52px 60px;
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2px;
+  }
+
+  .proc-row {
+    display: grid;
+    grid-template-columns: 50px 1fr 52px 52px 60px;
+    gap: 4px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background .1s;
+    align-items: center;
+  }
+  .proc-row:hover { background: var(--bg3); }
+  .proc-row:hover .kill-btn { opacity: 1; }
+
+  .proc-row .pid { color: var(--muted); font-size: 10px; }
+  .proc-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+  .proc-row .cpu-v { text-align: right; font-size: 11px; }
+  .proc-row .mem-v { text-align: right; font-size: 11px; color: var(--muted); }
+
+  .kill-btn {
+    opacity: 0;
+    background: rgba(239,68,68,0.15);
+    border: 1px solid rgba(239,68,68,0.3);
+    color: var(--danger);
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 10px;
+    cursor: pointer;
+    font-family: var(--mono);
+    transition: all .1s;
+    text-align: center;
+  }
+  .kill-btn:hover { background: rgba(239,68,68,0.3); }
+
+  .ok    { color: var(--ok); }
+  .warn  { color: var(--warn); }
+  .hot   { color: var(--danger); }
+
+  #statusbar {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 14px;
+    background: rgba(15,15,24,0.95);
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+
+  #statusbar .dot {
+    display: inline-block;
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--ok);
+    margin-right: 5px;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: .3; }
+  }
+
+  #toast {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 11px;
+    opacity: 0;
+    transition: all .2s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  #opacity-slider {
+    width: 70px;
+    height: 3px;
+    accent-color: var(--accent);
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="titlebar">
+    <div class="logo">MON<span>itor</span></div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <input type="range" id="opacity-slider" min="30" max="100" value="92" title="투명도">
+      <button class="ctrl-btn" id="btn-pin" title="항상 위">📌</button>
+      <button class="ctrl-btn" id="btn-hide" title="최소화">─</button>
+      <button class="ctrl-btn danger" id="btn-close" title="종료">✕</button>
+    </div>
+  </div>
+
+  <div id="tabs">
+    <div class="tab active" data-tab="overview">개요</div>
+    <div class="tab" data-tab="cpu">CPU</div>
+    <div class="tab" data-tab="process">프로세스</div>
+    <div class="tab" data-tab="disk">디스크</div>
+  </div>
+
+  <div id="content">
+
+    <div class="panel active" id="tab-overview">
+
+      <div class="card">
+        <div class="card-title">CPU <span class="val" id="ov-cpu">--</span>%</div>
+        <div class="gauge-track"><div class="gauge-fill" id="ov-cpu-bar" style="width:0%"></div></div>
+        <canvas class="sparkline" id="spark-cpu"></canvas>
+      </div>
+
+      <div class="card">
+        <div class="card-title">MEMORY <span class="val" id="ov-mem">--</span>%</div>
+        <div class="gauge-track"><div class="gauge-fill" id="ov-mem-bar" style="width:0%"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:var(--muted)">
+          <span>used <span id="ov-mem-used" style="color:var(--text)">--</span></span>
+          <span>free <span id="ov-mem-free" style="color:var(--text)">--</span></span>
+          <span>total <span id="ov-mem-total" style="color:var(--text)">--</span></span>
+        </div>
+        <canvas class="sparkline" id="spark-mem"></canvas>
+      </div>
+
+      <div class="card">
+        <div class="card-title">NETWORK <span style="font-size:10px;color:var(--muted)" id="ov-iface">--</span></div>
+        <div class="net-row">
+          <span class="label">DOWN</span>
+          <span class="down" id="ov-rx">-- KB/s</span>
+        </div>
+        <div class="net-row">
+          <span class="label">UP</span>
+          <span class="up" id="ov-tx">-- KB/s</span>
+        </div>
+        <canvas class="sparkline" id="spark-net"></canvas>
+      </div>
+
+      <div class="card" id="temp-card" style="display:none">
+        <div class="card-title">CPU TEMP <span class="val" id="ov-temp">--</span>°C</div>
+        <div class="gauge-track"><div class="gauge-fill" id="ov-temp-bar" style="width:0%"></div></div>
+      </div>
+
+    </div>
+
+    <div class="panel" id="tab-cpu">
+      <div class="card">
+        <div class="card-title">TOTAL LOAD <span class="val" id="cpu-total">--</span>%</div>
+        <div class="gauge-track"><div class="gauge-fill" id="cpu-total-bar" style="width:0%"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">PER CORE</div>
+        <div class="core-grid" id="core-grid"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="tab-process">
+      <input type="text" id="proc-search" placeholder="프로세스 검색...">
+      <div class="proc-header">
+        <span>PID</span><span>NAME</span><span style="text-align:right">CPU%</span><span style="text-align:right">MEM%</span><span></span>
+      </div>
+      <div id="proc-list"></div>
+    </div>
+
+    <div class="panel" id="tab-disk">
+      <div id="disk-list"></div>
+    </div>
+
+  </div>
+
+  <div id="statusbar">
+    <span><span class="dot"></span><span id="sb-time">--:--:--</span></span>
+    <span id="sb-proc">-- proc</span>
+    <span id="sb-uptime">up --h</span>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script src="renderer.js"></script>
+</body>
+</html>
